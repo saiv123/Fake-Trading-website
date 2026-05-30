@@ -246,7 +246,7 @@ MarketData.app (live quotes)       FMP API (corporate actions)
 - **Azure App Service B1:** ~$13/month
 - **Azure MySQL Flexible Server (Burstable B1ms):** ~$12–15/month
 - **Total:** ~$25–30/month
-- **Effective cost: $0** — developer has $200/month Azure credits via Microsoft employee benefit
+- **Effective cost: $0**
 
 ---
 
