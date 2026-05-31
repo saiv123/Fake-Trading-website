@@ -1,0 +1,59 @@
+from flask import Blueprint, request, jsonify, g
+from ..utils.auth import require_api_key
+from ..services.order_service import place_order, get_orders, cancel_order
+
+orders_bp = Blueprint('orders', __name__, url_prefix='/api/orders')
+
+VALID_ORDER_TYPES = {'MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT'}
+VALID_DIRECTIONS  = {'BUY', 'SELL'}
+
+
+@orders_bp.route('', methods=['POST'])
+@require_api_key
+def create_order():
+    data       = request.get_json()
+    ticker     = data.get('ticker')
+    direction  = data.get('direction', '').upper()
+    order_type = data.get('order_type', '').upper()
+    quantity   = data.get('quantity')
+    limit_price = data.get('limit_price')
+    stop_price  = data.get('stop_price')
+
+    if not all([ticker, direction, order_type, quantity]):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    if direction not in VALID_DIRECTIONS:
+        return jsonify({'error': 'Invalid direction'}), 400
+
+    if order_type not in VALID_ORDER_TYPES:
+        return jsonify({'error': 'Invalid order_type'}), 400
+
+    if order_type in ('LIMIT', 'STOP_LIMIT') and limit_price is None:
+        return jsonify({'error': 'limit_price required for LIMIT and STOP_LIMIT orders'}), 400
+
+    if order_type in ('STOP', 'STOP_LIMIT') and stop_price is None:
+        return jsonify({'error': 'stop_price required for STOP and STOP_LIMIT orders'}), 400
+
+    order = place_order(
+        user=g.user,
+        ticker=ticker.upper(),
+        direction=direction,
+        order_type=order_type,
+        quantity=quantity,
+        limit_price=limit_price,
+        stop_price=stop_price,
+    )
+    return jsonify(order), 201
+
+
+@orders_bp.route('')
+@require_api_key
+def list_orders():
+    return jsonify(get_orders(g.user))
+
+
+@orders_bp.route('/<int:order_id>', methods=['DELETE'])
+@require_api_key
+def delete_order(order_id):
+    cancel_order(g.user, order_id)
+    return jsonify({'message': 'Order cancelled'})

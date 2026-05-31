@@ -1,0 +1,198 @@
+import secrets
+from datetime import datetime, timedelta
+from flask import Blueprint, request, jsonify, url_for
+from authlib.integrations.flask_client import OAuth
+
+from ..models.user import User
+from ..utils.auth import require_any_key
+from .. import db
+
+# Short-lived Discord link tokens — { token: { discord_id, expires_at } }
+# Kept in memory since they expire in 15 minutes and don't need to survive restarts
+_discord_link_tokens: dict = {}
+
+auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+
+oauth = OAuth()
+
+BALANCE_MIN =     1_000.00
+BALANCE_MAX = 100_000.00
+
+
+def init_oauth(app):
+    """Call from the app factory to register OAuth providers."""
+    oauth.init_app(app)
+
+    oauth.register(
+        name='google',
+        client_id=app.config['GOOGLE_CLIENT_ID'],
+        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={'scope': 'openid email profile'},
+    )
+
+    oauth.register(
+        name='microsoft',
+        client_id=app.config['MICROSOFT_CLIENT_ID'],
+        client_secret=app.config['MICROSOFT_CLIENT_SECRET'],
+        server_metadata_url='https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration',
+        client_kwargs={'scope': 'openid email profile'},
+    )
+
+
+# ---- Google OAuth ------------------------------------------------------------
+
+@auth_bp.route('/google')
+def google_login():
+    redirect_uri = url_for('auth.google_callback', _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@auth_bp.route('/google/callback')
+def google_callback():
+    token    = oauth.google.authorize_access_token()
+    userinfo = token['userinfo']
+    return _handle_oauth(
+        provider='google',
+        provider_id=userinfo['sub'],
+        email=userinfo['email'],
+        display_name=userinfo.get('name', userinfo['email']),
+    )
+
+
+# ---- Microsoft OAuth ---------------------------------------------------------
+
+@auth_bp.route('/microsoft')
+def microsoft_login():
+    redirect_uri = url_for('auth.microsoft_callback', _external=True)
+    return oauth.microsoft.authorize_redirect(redirect_uri)
+
+
+@auth_bp.route('/microsoft/callback')
+def microsoft_callback():
+    token    = oauth.microsoft.authorize_access_token()
+    userinfo = oauth.microsoft.userinfo()
+    return _handle_oauth(
+        provider='microsoft',
+        provider_id=userinfo['sub'],
+        email=userinfo['email'],
+        display_name=userinfo.get('name', userinfo['email']),
+    )
+
+
+# ---- OAuth registration completion ------------------------------------------
+# Called by the frontend after an OAuth login with no existing account.
+# Frontend collects starting_balance and state, then posts everything here.
+
+@auth_bp.route('/oauth/register', methods=['POST'])
+def oauth_register():
+    data            = request.get_json()
+    provider        = data.get('provider')
+    provider_id     = data.get('provider_id')
+    email           = data.get('email')
+    display_name    = data.get('display_name')
+    state           = data.get('state')
+    starting_balance = data.get('starting_balance')
+
+    if not all([provider, provider_id, email, display_name, state, starting_balance]):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    if provider not in ('google', 'microsoft'):
+        return jsonify({'error': 'Invalid provider'}), 400
+
+    try:
+        starting_balance = float(starting_balance)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid starting balance'}), 400
+
+    if not (BALANCE_MIN <= starting_balance <= BALANCE_MAX):
+        return jsonify({'error': f'Starting balance must be between {BALANCE_MIN} and {BALANCE_MAX}'}), 400
+
+    if User.query.filter_by(email=email).first():
+        return jsonify({'error': 'Email already registered'}), 409
+
+    user = User(
+        email=email,
+        display_name=display_name,
+        state=state,
+        starting_balance=starting_balance,
+        balance=starting_balance,
+        **{f'{provider}_id': provider_id},
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    return jsonify({'user_id': user.id}), 201
+
+
+# ---- Discord account linking -------------------------------------------------
+# Bot calls /discord/link-token with the user's Discord ID to get a one-time URL.
+# User visits the URL on the website, which calls /discord/link/complete with
+# their user_id and the token to write discord_id onto their account.
+
+@auth_bp.route('/discord/link-token', methods=['POST'])
+@require_any_key
+def discord_link_token():
+    discord_id = request.get_json().get('discord_id')
+    if not discord_id:
+        return jsonify({'error': 'Missing discord_id'}), 400
+
+    token = secrets.token_urlsafe(24)
+    _discord_link_tokens[token] = {
+        'discord_id': discord_id,
+        'expires_at': datetime.utcnow() + timedelta(minutes=15),
+    }
+    link_url = url_for('auth.discord_link_complete', token=token, _external=True)
+    return jsonify({'url': link_url})
+
+
+@auth_bp.route('/discord/link/complete', methods=['POST'])
+@require_any_key
+def discord_link_complete():
+    data    = request.get_json()
+    token   = data.get('token')
+    user_id = data.get('user_id')
+
+    if not token or not user_id:
+        return jsonify({'error': 'Missing token or user_id'}), 400
+
+    entry = _discord_link_tokens.get(token)
+    if not entry or datetime.utcnow() > entry['expires_at']:
+        _discord_link_tokens.pop(token, None)
+        return jsonify({'error': 'Invalid or expired token'}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    user.discord_id = entry['discord_id']
+    db.session.commit()
+    _discord_link_tokens.pop(token)
+
+    return jsonify({'message': 'Discord account linked'})
+
+
+# ---- Helpers -----------------------------------------------------------------
+
+def _handle_oauth(provider: str, provider_id: str, email: str, display_name: str):
+    id_field = f'{provider}_id'
+
+    user = User.query.filter_by(**{id_field: provider_id}).first()
+
+    if not user:
+        # Link to an existing account if the email matches a different provider
+        user = User.query.filter_by(email=email).first()
+        if user:
+            setattr(user, id_field, provider_id)
+            db.session.commit()
+        else:
+            # New user — frontend must collect starting_balance and state
+            return jsonify({
+                'requires_registration': True,
+                'provider':     provider,
+                'provider_id':  provider_id,
+                'email':        email,
+                'display_name': display_name,
+            }), 202
+
+    return jsonify({'user_id': user.id})
