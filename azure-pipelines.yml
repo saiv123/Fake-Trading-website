@@ -1,0 +1,80 @@
+# Azure DevOps pipeline — runs on every push to main: tests first, then deploys the backend
+# to Azure App Service only if the tests pass.
+#
+# One-time setup in Azure DevOps:
+#   1. Create a free org + project at https://dev.azure.com and connect this GitHub repo.
+#   2. Project Settings → Service connections → New → Azure Resource Manager → name it,
+#      then put that name in the `azureSubscription` variable below.
+#   3. Put your App Service name in `webAppName`.
+#   4. On the App Service, set app setting SCM_DO_BUILD_DURING_DEPLOYMENT=true so Oryx
+#      installs requirements.txt on deploy.
+
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  pythonVersion: '3.12'
+  azureSubscription: 'REPLACE_WITH_SERVICE_CONNECTION_NAME'
+  webAppName: 'REPLACE_WITH_APP_SERVICE_NAME'
+
+stages:
+  - stage: Test
+    displayName: Test
+    jobs:
+      - job: backend
+        displayName: Backend tests
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '$(pythonVersion)'
+          - script: sudo apt-get update && sudo apt-get install -y unixodbc-dev
+            displayName: Install ODBC headers (for pyodbc)
+          - script: pip install -r requirements-dev.txt
+            workingDirectory: backend
+            displayName: Install dependencies
+          - script: python -m pytest -q
+            workingDirectory: backend
+            displayName: Run pytest
+
+      - job: bot
+        displayName: Bot compile check
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '$(pythonVersion)'
+          - script: pip install -r requirements.txt
+            workingDirectory: bot
+            displayName: Install dependencies
+          - script: python -m compileall .
+            workingDirectory: bot
+            displayName: Compile check
+
+  - stage: Deploy
+    displayName: Deploy backend
+    dependsOn: Test
+    condition: succeeded()        # only deploys if every Test job passed
+    jobs:
+      - deployment: deployBackend
+        displayName: Deploy to Azure App Service
+        pool:
+          vmImage: ubuntu-latest
+        environment: production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: AzureWebApp@1
+                  inputs:
+                    azureSubscription: '$(azureSubscription)'
+                    appType: 'webAppLinux'
+                    appName: '$(webAppName)'
+                    runtimeStack: 'PYTHON|3.12'
+                    package: '$(System.DefaultWorkingDirectory)/backend'
+                    startUpCommand: 'bash startup.sh'

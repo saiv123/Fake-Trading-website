@@ -1,6 +1,6 @@
 # 📈 Mock Trading Platform
 
-[![CI](https://github.com/saiv123/Fake-Trading-website/actions/workflows/ci.yml/badge.svg)](https://github.com/saiv123/Fake-Trading-website/actions/workflows/ci.yml)
+[![Build Status](https://dev.azure.com/REPLACE_ORG/REPLACE_PROJECT/_apis/build/status/REPLACE_PIPELINE?branchName=main)](https://dev.azure.com/REPLACE_ORG/REPLACE_PROJECT/_build/latest?definitionId=REPLACE_ID&branchName=main)
 ![Python](https://img.shields.io/badge/python-3.12-blue.svg)
 ![Backend](https://img.shields.io/badge/backend-Flask-000000.svg)
 ![Frontend](https://img.shields.io/badge/frontend-React-61DAFB.svg)
@@ -9,7 +9,7 @@
 > A paper-trading platform that simulates buying and selling real stocks with live market data and **no real money**.
 > **Philosophy: what happens in the real market happens in the sim** — taxes, dividends, splits, mergers, slippage and all.
 
-The green **CI** badge above means the test suite is currently passing on `main`.
+The green **Build** badge above means the Azure Pipelines test suite is currently passing on `main`.
 
 ---
 
@@ -63,7 +63,7 @@ backend/          Flask API — the single source of truth
 frontend/         React app
 bot/              Discord bot (interactions.py)
   commands/       Slash commands (/buy /sell /portfolio /price ...)
-.github/workflows/ci.yml   CI pipeline
+azure-pipelines.yml        Azure DevOps pipeline (test → deploy on push to main)
 ```
 
 ---
@@ -111,7 +111,7 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-Tests run on an in-memory SQLite database (no external services needed) and execute automatically on every push and pull request via GitHub Actions.
+Tests run on an in-memory SQLite database (no external services needed) and execute automatically via **Azure Pipelines** on every push to `main` — the backend is deployed to Azure App Service only if they pass.
 
 **What's covered:**
 
