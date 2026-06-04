@@ -1,9 +1,17 @@
-# SQLAlchemy model for the holdings_ledger table — one row per tax lot; BUYs insert, SELLs reduce qty_remaining FIFO, zeroed rows are deleted
+"""Holdings ledger model — the "current state" half of the CQRS design.
+
+One row per tax lot. Every BUY inserts a new lot; SELLs reduce `qty_remaining` from the oldest lots
+first (FIFO), and lots that reach zero are deleted. Keeping current holdings in this small table means
+portfolio reads stay fast no matter how long the transaction history grows. Indexes support the common
+per-user and per-user-per-ticker (FIFO-ordered) lookups.
+"""
 from datetime import datetime
 from .. import db
 
 
 class HoldingLot(db.Model):
+    """A single purchase lot: shares remaining, the price paid, when bought, and its DRIP flag."""
+
     __tablename__ = 'holdings_ledger'
 
     lot_id         = db.Column(db.Integer, primary_key=True)

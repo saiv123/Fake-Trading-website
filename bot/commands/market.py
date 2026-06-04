@@ -1,4 +1,8 @@
-# Market commands — /price, /buy, /sell, /orders, /cancel
+"""Market slash commands: /price, /buy, /sell, /orders, /cancel.
+
+Each command formats a request, sends it to the Flask API via api_client (which adds the bot key and
+the caller's Discord ID), and renders the JSON response as a Discord embed. No trading logic lives here.
+"""
 import interactions
 from interactions import (
     Extension, slash_command, slash_option, SlashContext,
@@ -17,11 +21,13 @@ ORDER_TYPE_CHOICES = [
 
 
 class Market(Extension):
+    """Slash commands for quotes and order placement/management."""
 
     @slash_command(name="price", description="Get a stock quote")
     @slash_option(name="ticker", description="Ticker symbol (e.g. AAPL)",
                   required=True, opt_type=OptionType.STRING)
     async def price(self, ctx: SlashContext, ticker: str):
+        """Show a quote embed: price, change, bid/ask, day & 52-week ranges, after-hours if present."""
         resp = await call(api_client.get, f"/api/stocks/{ticker.upper()}", discord_id=ctx.author.id)
         if not resp.ok:
             await ctx.send(error_message(resp), ephemeral=True)
@@ -52,6 +58,7 @@ class Market(Extension):
                   required=False, opt_type=OptionType.NUMBER)
     async def buy(self, ctx: SlashContext, ticker: str, quantity: float, order_type: str,
                   limit_price: float = None, stop_price: float = None):
+        """Place a BUY order of the chosen type; delegates to _place."""
         await self._place(ctx, "BUY", ticker, quantity, order_type, limit_price, stop_price)
 
     @slash_command(name="sell", description="Place a sell order")
@@ -66,9 +73,11 @@ class Market(Extension):
                   required=False, opt_type=OptionType.NUMBER)
     async def sell(self, ctx: SlashContext, ticker: str, quantity: float, order_type: str,
                    limit_price: float = None, stop_price: float = None):
+        """Place a SELL order of the chosen type; delegates to _place."""
         await self._place(ctx, "SELL", ticker, quantity, order_type, limit_price, stop_price)
 
     async def _place(self, ctx, direction, ticker, quantity, order_type, limit_price, stop_price):
+        """Build the order payload, POST it, and reply with a filled/queued confirmation embed."""
         body = {
             "ticker": ticker.upper(),
             "direction": direction,
@@ -104,6 +113,7 @@ class Market(Extension):
 
     @slash_command(name="orders", description="List your pending and recent orders")
     async def orders(self, ctx: SlashContext):
+        """List the caller's orders (up to 15) with status and fill price."""
         resp = await call(api_client.get, "/api/orders", discord_id=ctx.author.id)
         if not resp.ok:
             await ctx.send(error_message(resp), ephemeral=True)
@@ -125,6 +135,7 @@ class Market(Extension):
     @slash_option(name="order_id", description="The order ID (from /orders)",
                   required=True, opt_type=OptionType.INTEGER)
     async def cancel(self, ctx: SlashContext, order_id: int):
+        """Cancel a pending order by its ID (from /orders)."""
         resp = await call(api_client.delete, f"/api/orders/{order_id}", discord_id=ctx.author.id)
         if not resp.ok:
             await ctx.send(error_message(resp), ephemeral=True)

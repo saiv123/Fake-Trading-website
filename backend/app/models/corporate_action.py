@@ -1,4 +1,10 @@
-# SQLAlchemy model for the corporate_actions_log table — records fetched from FMP daily; processed_at is null until the 9:25 AM job applies them
+"""Corporate actions log model.
+
+Records dividends, splits, mergers, acquisitions, spinoffs, ticker changes, and delistings fetched
+daily from FMP. `details` holds action-specific data as JSON (e.g. amount-per-share, split ratio,
+cash price, new ticker). `processed_at` stays NULL until the 9:25 AM processor job applies the action
+to every affected holding — making it the queue of pending corporate actions.
+"""
 from datetime import datetime
 from .. import db
 
@@ -11,6 +17,8 @@ ACTION_TYPES = (
 
 
 class CorporateAction(db.Model):
+    """A single corporate action to apply on its effective date; unprocessed while `processed_at` is NULL."""
+
     __tablename__ = 'corporate_actions_log'
 
     id             = db.Column(db.Integer, primary_key=True)

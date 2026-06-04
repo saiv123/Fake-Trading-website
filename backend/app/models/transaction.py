@@ -1,4 +1,10 @@
-# SQLAlchemy model for the transactions table — append-only immutable log; rows are never updated or deleted; stores realized gains, lot details, and all credit/debit events
+"""Transaction log model — the "history" half of the CQRS design.
+
+An append-only, immutable record of every cash/share event: buys, sells, dividends, DRIP, splits,
+corporate-action cashouts, stipends, and tax payments. Rows are never updated or deleted. SELL rows
+also store realized short/long-term gains and a JSON breakdown of the lots consumed, which the tax
+system reads at year end. `ticker` is intentionally not a foreign key so history survives delistings.
+"""
 from datetime import datetime
 from .. import db
 
@@ -11,6 +17,8 @@ TX_TYPES = (
 
 
 class Transaction(db.Model):
+    """One immutable ledger entry. `total_value` is signed: positive = credit, negative = debit."""
+
     __tablename__ = 'transactions'
 
     tx_id           = db.Column(db.Integer, primary_key=True)
@@ -34,6 +42,7 @@ class Transaction(db.Model):
     )
 
     def to_dict(self):
+        """Serialize the row to JSON-safe primitives (Decimals → strings) for API responses."""
         return {
             'tx_id':           self.tx_id,
             'ticker':          self.ticker,

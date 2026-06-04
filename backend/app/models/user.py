@@ -1,8 +1,16 @@
+"""User account model.
+
+One row per registered user. Accounts are created via Google/Microsoft OAuth (no passwords),
+optionally linked to a Discord ID later. `starting_balance`/`balance` use DECIMAL for exact money
+math, and `state` drives the tax calculation. MFA columns are reserved for V2.
+"""
 from datetime import datetime
 from .. import db
 
 
 class User(db.Model):
+    """A registered trader: identity, OAuth/Discord links, paper-cash balance, and tax state."""
+
     __tablename__ = 'users'
 
     id               = db.Column(db.Integer, primary_key=True)
