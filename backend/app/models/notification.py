@@ -1,9 +1,17 @@
-# Per-user notifications — created when a corporate action, stipend, or tax event affects the user; surfaced in the UI and DM'd via Discord if linked
+"""Notification model.
+
+Per-user alerts created whenever something touches an account without the user asking — dividends,
+splits, mergers, delistings, stipend credits, and tax settlements. Surfaced in the web UI and, if the
+account is Discord-linked, also sent as a DM. Services create these as part of the same DB transaction
+as the event that triggered them.
+"""
 from datetime import datetime
 from .. import db
 
 
 class Notification(db.Model):
+    """A single alert shown to one user; `read` tracks whether they've seen it."""
+
     __tablename__ = 'notifications'
 
     id         = db.Column(db.Integer, primary_key=True)

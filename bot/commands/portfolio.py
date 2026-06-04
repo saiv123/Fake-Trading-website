@@ -1,4 +1,8 @@
-# Portfolio commands — /portfolio, /balance, /history, /drip
+"""Portfolio slash commands: /portfolio, /balance, /history, /drip.
+
+Read-only views of the caller's account plus the per-position DRIP toggle. Like the market commands,
+these only format requests/responses — all the math happens in the Flask API.
+"""
 import interactions
 from interactions import (
     Extension, slash_command, slash_option, SlashContext,
@@ -15,9 +19,11 @@ ONOFF_CHOICES = [
 
 
 class Portfolio(Extension):
+    """Slash commands for viewing the account and toggling DRIP."""
 
     @slash_command(name="portfolio", description="View your holdings and unrealized P&L")
     async def portfolio(self, ctx: SlashContext):
+        """Show equity/cash plus each position's price, ACB, and unrealized P&L."""
         resp = await call(api_client.get, "/api/portfolio", discord_id=ctx.author.id)
         if not resp.ok:
             await ctx.send(error_message(resp), ephemeral=True)
@@ -49,6 +55,7 @@ class Portfolio(Extension):
 
     @slash_command(name="balance", description="View your cash balance")
     async def balance(self, ctx: SlashContext):
+        """Show the caller's current cash and starting balance."""
         resp = await call(api_client.get, "/api/user/me", discord_id=ctx.author.id)
         if not resp.ok:
             await ctx.send(error_message(resp), ephemeral=True)
@@ -61,6 +68,7 @@ class Portfolio(Extension):
 
     @slash_command(name="history", description="View your recent transactions")
     async def history(self, ctx: SlashContext):
+        """Show the caller's most recent transactions (up to 15)."""
         resp = await call(api_client.get, "/api/portfolio/history", discord_id=ctx.author.id)
         if not resp.ok:
             await ctx.send(error_message(resp), ephemeral=True)
@@ -87,6 +95,7 @@ class Portfolio(Extension):
     @slash_option(name="state", description="Turn DRIP on or off", required=True,
                   opt_type=OptionType.STRING, choices=ONOFF_CHOICES)
     async def drip(self, ctx: SlashContext, ticker: str, state: str):
+        """Turn DRIP on or off for a single position."""
         resp = await call(api_client.patch, f"/api/portfolio/{ticker.upper()}/drip",
                           discord_id=ctx.author.id, json={"drip_enabled": state == "on"})
         if not resp.ok:

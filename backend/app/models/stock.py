@@ -1,9 +1,16 @@
-# SQLAlchemy model for the stocks table — price cache updated at market open/close and on-demand; never queried per page load
+"""Stock price-cache model.
+
+The `stocks` table is a local cache of the latest quote per ticker, refreshed at market open/close,
+on-demand when a quote is stale, and hourly for tickers with pending orders — never on every page load.
+`after_hours_price` is shown to users but is never used for order execution.
+"""
 from datetime import datetime
 from .. import db
 
 
 class Stock(db.Model):
+    """Cached latest quote for one ticker (price, bid/ask, day & 52-week ranges, volume)."""
+
     __tablename__ = 'stocks'
 
     ticker            = db.Column(db.String(10), primary_key=True)
@@ -24,6 +31,7 @@ class Stock(db.Model):
     is_active         = db.Column(db.Boolean, default=True, nullable=False)  # false for delisted/renamed
 
     def to_dict(self):
+        """Serialize the quote to JSON-safe primitives (Decimals → strings) for API responses."""
         return {
             'ticker':            self.ticker,
             'company_name':      self.company_name,

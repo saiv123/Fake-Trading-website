@@ -1,4 +1,9 @@
-# Reads holdings_ledger to build portfolio summary with ACB and unrealized P&L; also handles paginated transaction history and DRIP toggles.
+"""Portfolio service.
+
+Builds the portfolio summary by aggregating the holdings ledger lots per ticker (average cost basis,
+market value, unrealized P&L), serves paginated transaction history, and applies DRIP toggles. All money
+math uses Decimal and is truncated to 2dp.
+"""
 from collections import defaultdict
 from decimal import Decimal
 
@@ -13,6 +18,7 @@ HISTORY_PAGE_SIZE = 50
 
 
 def get_holdings(user):
+    """Aggregate open lots into per-ticker positions (ACB, market value, unrealized P&L) plus account totals."""
     lots = (HoldingLot.query
             .filter(HoldingLot.user_id == user.id, HoldingLot.qty_remaining > 0)
             .all())
@@ -60,6 +66,7 @@ def get_holdings(user):
 
 
 def get_history(user, page=1):
+    """Return one page of the user's transactions (newest first) with total count for pagination."""
     page = max(1, int(page))
     q = (Transaction.query
          .filter_by(user_id=user.id)
@@ -75,12 +82,14 @@ def get_history(user, page=1):
 
 
 def enable_all_drip(user):
+    """Turn DRIP on for every existing lot and set the user's drip_all UI flag."""
     HoldingLot.query.filter_by(user_id=user.id).update({'drip_enabled': True})
     user.drip_all = True
     db.session.commit()
 
 
 def toggle_drip(user, ticker, enabled):
+    """Set DRIP on/off for all of the user's lots of one ticker; 404 if they hold none."""
     updated = (HoldingLot.query
                .filter_by(user_id=user.id, ticker=ticker)
                .update({'drip_enabled': enabled}))

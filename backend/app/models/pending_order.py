@@ -1,9 +1,17 @@
-# Current-state table for orders still awaiting execution — the hourly check pulls DISTINCT tickers from here, batch-fetches prices for those tickers, then evaluates fill conditions across all rows; deleted immediately on fill/expiry/cancel
+"""Pending-orders model — the small "work queue" of orders still awaiting execution.
+
+Mirrors the open subset of the `orders` table (same `order_id`). The hourly check pulls DISTINCT
+tickers from here, batch-fetches prices for just those tickers, then evaluates fill conditions across
+the rows. A row is deleted the instant its order fills, expires, or is cancelled, so this table stays
+tiny — the whole point of separating it from the full `orders` history.
+"""
 from datetime import datetime
 from .. import db
 
 
 class PendingOrder(db.Model):
+    """An open order awaiting a fill; carries only the fields the hourly check needs."""
+
     __tablename__ = 'pending_orders'
 
     # order_id mirrors the orders.id of the same order — one pending row per open order

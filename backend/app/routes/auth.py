@@ -1,3 +1,13 @@
+"""Authentication & account-linking endpoints (/api/auth).
+
+Login is OAuth-only (Google / Microsoft) — there are no passwords. The flow:
+  1. /<provider> redirects to the provider; /<provider>/callback handles the return.
+  2. _handle_oauth matches the account by provider ID, links it to an existing email if found,
+     or returns 202 "requires_registration" so the frontend can collect starting_balance + state.
+  3. /oauth/register finalizes a brand-new account.
+Also hosts the Discord linking flow: the bot requests a one-time token, the user visits the URL on
+the website, and discord_id gets written onto their account. Link tokens are short-lived and in-memory.
+"""
 import secrets
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, url_for
@@ -44,12 +54,14 @@ def init_oauth(app):
 
 @auth_bp.route('/google')
 def google_login():
+    """GET /api/auth/google — kick off the Google OAuth redirect."""
     redirect_uri = url_for('auth.google_callback', _external=True)
     return oauth.google.authorize_redirect(redirect_uri)
 
 
 @auth_bp.route('/google/callback')
 def google_callback():
+    """GET /api/auth/google/callback — handle Google's redirect and resolve/create the account."""
     token    = oauth.google.authorize_access_token()
     userinfo = token['userinfo']
     return _handle_oauth(
@@ -64,12 +76,14 @@ def google_callback():
 
 @auth_bp.route('/microsoft')
 def microsoft_login():
+    """GET /api/auth/microsoft — kick off the Microsoft OAuth redirect."""
     redirect_uri = url_for('auth.microsoft_callback', _external=True)
     return oauth.microsoft.authorize_redirect(redirect_uri)
 
 
 @auth_bp.route('/microsoft/callback')
 def microsoft_callback():
+    """GET /api/auth/microsoft/callback — handle Microsoft's redirect and resolve/create the account."""
     token    = oauth.microsoft.authorize_access_token()
     userinfo = oauth.microsoft.userinfo()
     return _handle_oauth(
@@ -86,6 +100,10 @@ def microsoft_callback():
 
 @auth_bp.route('/oauth/register', methods=['POST'])
 def oauth_register():
+    """POST /api/auth/oauth/register — finalize a new account after first OAuth login.
+
+    Validates the slider-chosen starting_balance is within bounds, then creates the user.
+    """
     data            = request.get_json()
     provider        = data.get('provider')
     provider_id     = data.get('provider_id')
@@ -133,6 +151,7 @@ def oauth_register():
 @auth_bp.route('/discord/link-token', methods=['POST'])
 @require_any_key
 def discord_link_token():
+    """POST /api/auth/discord/link-token — bot-only; mint a 15-min one-time link URL for a Discord ID."""
     discord_id = request.get_json().get('discord_id')
     if not discord_id:
         return jsonify({'error': 'Missing discord_id'}), 400
@@ -149,6 +168,7 @@ def discord_link_token():
 @auth_bp.route('/discord/link/complete', methods=['POST'])
 @require_any_key
 def discord_link_complete():
+    """POST /api/auth/discord/link/complete — redeem a link token and attach discord_id to the user."""
     data    = request.get_json()
     token   = data.get('token')
     user_id = data.get('user_id')
@@ -175,6 +195,11 @@ def discord_link_complete():
 # ---- Helpers -----------------------------------------------------------------
 
 def _handle_oauth(provider: str, provider_id: str, email: str, display_name: str):
+    """Resolve an OAuth login to a user.
+
+    Returns the user_id if the provider ID is known or links to a matching email; otherwise returns a
+    202 telling the frontend to collect difficulty/state and call /oauth/register.
+    """
     id_field = f'{provider}_id'
 
     user = User.query.filter_by(**{id_field: provider_id}).first()

@@ -1,3 +1,11 @@
+"""Application factory and shared SQLAlchemy instance.
+
+`db` is created at import time (no app bound yet) so models can import it without a circular dependency;
+`create_app()` wires it to a configured Flask app. The factory loads config from the environment,
+registers every blueprint and the error handler, creates tables, and — unless ENABLE_SCHEDULER is
+false — starts the APScheduler background jobs. Import this module's `db` everywhere; call
+`create_app()` once from the entry point (wsgi.py).
+"""
 import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
@@ -9,6 +17,7 @@ db = SQLAlchemy()
 
 
 def create_app():
+    """Build, configure, and return the Flask app (blueprints, DB, error handlers, scheduler)."""
     app = Flask(__name__)
 
     app.config['SQLALCHEMY_DATABASE_URI']        = os.environ['DATABASE_URL']

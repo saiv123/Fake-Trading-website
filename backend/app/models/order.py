@@ -1,9 +1,16 @@
-# Append-only log of all orders ever placed — source of truth for order history; status is updated here when an order resolves but this table is never used for the hourly check (see pending_order.py)
+"""Order record model — the full history of every order placed.
+
+Every order (market/limit/stop/stop-limit) gets a row here and its `status` is updated as it resolves
+(FILLED / EXPIRED / CANCELLED). This is the source of truth for "show me my orders"; the hourly fill
+check never scans this table — it works off the small `pending_orders` table instead (see pending_order.py).
+"""
 from datetime import datetime
 from .. import db
 
 
 class Order(db.Model):
+    """One placed order with its parameters, lifecycle status, and fill details."""
+
     __tablename__ = 'orders'
 
     id          = db.Column(db.Integer, primary_key=True)
@@ -26,6 +33,7 @@ class Order(db.Model):
     )
 
     def to_dict(self):
+        """Serialize the order to JSON-safe primitives for API responses."""
         return {
             'id':          self.id,
             'ticker':      self.ticker,
