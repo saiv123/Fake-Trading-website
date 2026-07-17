@@ -76,7 +76,7 @@ def _fetch_splits(start, end, held):
 
 # ---- Processor (9:25 AM ET, trading days) -----------------------------------
 
-def process_due_actions(as_of: date = None):
+def process_due_actions(as_of: date = None): # type: ignore
     """Apply all unprocessed actions whose effective date has arrived."""
     as_of = as_of or date.today()
     due = (CorporateAction.query
