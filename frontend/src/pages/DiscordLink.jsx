@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import client from '../api/client.js';
-import { useAuth } from '../context/AuthContext.jsx';
 
 const CARD = 'rounded-lg border border-slate-200 bg-white p-6 shadow-sm';
 const PRIMARY_BUTTON =
@@ -16,7 +15,6 @@ function maskToken(token) {
 
 export default function DiscordLink() {
   const [searchParams] = useSearchParams();
-  const { userId } = useAuth();
   const token = searchParams.get('token');
 
   const [submitting, setSubmitting] = useState(false);
@@ -27,10 +25,9 @@ export default function DiscordLink() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await client.post('/api/auth/discord/link/complete', {
-        token,
-        user_id: userId,
-      });
+      // Identity comes from the Authorization header client.js already attaches — the backend
+      // resolves the acting user from the session, not from anything sent in this body.
+      const res = await client.post('/api/auth/discord/link/complete', { token });
       setResult(res.data.message || 'Discord account linked.');
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to link Discord account.');

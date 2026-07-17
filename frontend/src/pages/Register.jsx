@@ -84,7 +84,7 @@ export default function Register() {
         state,
         starting_balance: balance,
       });
-      login(res.data.user_id);
+      login(res.data.token);
       navigate('/', { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong. Please try again.');

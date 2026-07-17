@@ -14,11 +14,11 @@ the website, and discord_id gets written onto their account. Link tokens are sho
 import secrets
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
-from flask import Blueprint, request, jsonify, redirect, url_for, current_app
+from flask import Blueprint, request, jsonify, redirect, url_for, current_app, g
 from authlib.integrations.flask_client import OAuth
 
 from ..models.user import User
-from ..utils.auth import require_any_key
+from ..utils.auth import require_bot, require_session, create_session_token
 from .. import db
 
 # Short-lived Discord link tokens — { token: { discord_id, expires_at } }
@@ -144,16 +144,17 @@ def oauth_register():
     db.session.add(user)
     db.session.commit()
 
-    return jsonify({'user_id': user.id}), 201
+    token = create_session_token(user.id)
+    return jsonify({'user_id': user.id, 'token': token}), 201
 
 
 # ---- Discord account linking -------------------------------------------------
 # Bot calls /discord/link-token with the user's Discord ID to get a one-time URL.
-# User visits the URL on the website, which calls /discord/link/complete with
-# their user_id and the token to write discord_id onto their account.
+# The logged-in website user opens that URL and calls /discord/link/complete with just the
+# token — their identity comes from their session, never from a client-supplied user_id.
 
 @auth_bp.route('/discord/link-token', methods=['POST'])
-@require_any_key
+@require_bot
 def discord_link_token():
     """POST /api/auth/discord/link-token — bot-only; mint a 15-min one-time link URL for a Discord ID."""
     discord_id = request.get_json().get('discord_id')
@@ -166,32 +167,27 @@ def discord_link_token():
         'expires_at': datetime.utcnow() + timedelta(minutes=15),
     }
     # Points at the frontend, not the backend directly — /discord/link/complete is POST-only and
-    # the user needs a page to log in (if needed) and fire that POST with their user_id.
+    # the user needs a page to log in (if needed) and fire that POST from their session.
     link_url = f"{current_app.config['FRONTEND_URL']}/discord/link?token={token}"
     return jsonify({'url': link_url})
 
 
 @auth_bp.route('/discord/link/complete', methods=['POST'])
-@require_any_key
+@require_session
 def discord_link_complete():
-    """POST /api/auth/discord/link/complete — redeem a link token and attach discord_id to the user."""
-    data    = request.get_json()
-    token   = data.get('token')
-    user_id = data.get('user_id')
+    """POST /api/auth/discord/link/complete — redeem a link token and attach discord_id to the
+    logged-in user (g.user, from the session token — never a client-supplied id)."""
+    token = (request.get_json() or {}).get('token')
 
-    if not token or not user_id:
-        return jsonify({'error': 'Missing token or user_id'}), 400
+    if not token:
+        return jsonify({'error': 'Missing token'}), 400
 
     entry = _discord_link_tokens.get(token)
     if not entry or datetime.utcnow() > entry['expires_at']:
         _discord_link_tokens.pop(token, None)
         return jsonify({'error': 'Invalid or expired token'}), 400
 
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-
-    user.discord_id = entry['discord_id']
+    g.user.discord_id = entry['discord_id']
     db.session.commit()
     _discord_link_tokens.pop(token)
 
@@ -203,9 +199,9 @@ def discord_link_complete():
 def _handle_oauth(provider: str, provider_id: str, email: str, display_name: str):
     """Resolve an OAuth login to a user and redirect back to the frontend with the result.
 
-    Redirects to FRONTEND_URL/auth/callback with either ?user_id=... (known account) or
-    ?requires_registration=1&... (new account — the frontend collects starting_balance/state
-    and calls /oauth/register).
+    Redirects to FRONTEND_URL/auth/callback with either ?token=... (a fresh session token for a
+    known account) or ?requires_registration=1&... (new account — the frontend collects
+    starting_balance/state and calls /oauth/register, which returns its own token).
     """
     id_field = f'{provider}_id'
 
@@ -228,5 +224,5 @@ def _handle_oauth(provider: str, provider_id: str, email: str, display_name: str
             })
             return redirect(f"{current_app.config['FRONTEND_URL']}/auth/callback?{params}")
 
-    params = urlencode({'user_id': user.id})
+    params = urlencode({'token': create_session_token(user.id)})
     return redirect(f"{current_app.config['FRONTEND_URL']}/auth/callback?{params}")

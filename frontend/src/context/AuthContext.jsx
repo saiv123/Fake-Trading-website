@@ -2,24 +2,25 @@ import { createContext, useCallback, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
 
-const STORAGE_KEY = 'userId';
+const STORAGE_KEY = 'sessionToken';
 
-// The backend has no sessions/cookies — identity is just a user_id sent as the X-User-Id
-// header (see api/client.js). "Logging in" here means persisting that id locally.
+// Identity is a signed session token minted by the backend at login (see api/client.js, which
+// attaches it as Authorization: Bearer <token>). "Logging in" means persisting that token
+// locally; there's no server-side revocation, so "logging out" is purely a local clear.
 export function AuthProvider({ children }) {
-  const [userId, setUserId] = useState(() => localStorage.getItem(STORAGE_KEY));
+  const [token, setToken] = useState(() => localStorage.getItem(STORAGE_KEY));
 
-  const login = useCallback((id) => {
-    localStorage.setItem(STORAGE_KEY, String(id));
-    setUserId(String(id));
+  const login = useCallback((sessionToken) => {
+    localStorage.setItem(STORAGE_KEY, sessionToken);
+    setToken(sessionToken);
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
-    setUserId(null);
+    setToken(null);
   }, []);
 
-  const value = { userId, isAuthenticated: Boolean(userId), login, logout };
+  const value = { isAuthenticated: Boolean(token), login, logout };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

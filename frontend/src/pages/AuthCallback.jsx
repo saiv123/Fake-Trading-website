@@ -7,12 +7,12 @@ export default function AuthCallback() {
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const userId = searchParams.get('user_id');
+  const token = searchParams.get('token');
   const requiresRegistration = searchParams.get('requires_registration');
 
   useEffect(() => {
-    if (userId) {
-      login(userId);
+    if (token) {
+      login(token);
       navigate('/', { replace: true });
       return;
     }
@@ -30,9 +30,9 @@ export default function AuthCallback() {
     }
     // Only re-run if the query params actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, requiresRegistration]);
+  }, [token, requiresRegistration]);
 
-  if (!userId && !requiresRegistration) {
+  if (!token && !requiresRegistration) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm">

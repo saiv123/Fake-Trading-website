@@ -2,10 +2,11 @@
 
 Thin HTTP layer over order_service: it validates the request shape (direction, order type, and that the
 right price fields are present) and then delegates all placement/cancellation logic to the service.
-Every route is user-scoped via require_api_key, which injects the acting user as g.user.
+Every route is user-scoped via require_session_or_bot_user, which injects the acting user as g.user —
+either the website's logged-in session or the bot acting for a linked Discord user.
 """
 from flask import Blueprint, request, jsonify, g
-from ..utils.auth import require_api_key
+from ..utils.auth import require_session_or_bot_user
 from ..services.order_service import place_order, get_orders, cancel_order
 
 orders_bp = Blueprint('orders', __name__, url_prefix='/api/orders')
@@ -15,7 +16,7 @@ VALID_DIRECTIONS  = {'BUY', 'SELL'}
 
 
 @orders_bp.route('', methods=['POST'])
-@require_api_key
+@require_session_or_bot_user
 def create_order():
     """POST /api/orders — validate and place a new order; fills immediately or queues as pending."""
     data       = request.get_json()
@@ -54,14 +55,14 @@ def create_order():
 
 
 @orders_bp.route('')
-@require_api_key
+@require_session_or_bot_user
 def list_orders():
     """GET /api/orders — the user's pending and recent orders."""
     return jsonify(get_orders(g.user))
 
 
 @orders_bp.route('/<int:order_id>', methods=['DELETE'])
-@require_api_key
+@require_session_or_bot_user
 def delete_order(order_id):
     """DELETE /api/orders/<id> — cancel one of the user's pending orders."""
     cancel_order(g.user, order_id)

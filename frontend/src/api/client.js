@@ -1,5 +1,5 @@
-// Centralized Axios client. Backend auth has no cookies/JWT — every request carries a static
-// X-API-Key (this website's pre-shared key) plus X-User-Id for the acting user, once known.
+// Centralized Axios client. Backend auth is a per-user signed session token minted at login —
+// no API key, no cookies. Every request carries it as Authorization: Bearer <token>, once known.
 import axios from 'axios';
 
 const client = axios.create({
@@ -7,11 +7,9 @@ const client = axios.create({
 });
 
 client.interceptors.request.use((config) => {
-  config.headers['X-API-Key'] = import.meta.env.VITE_WEBSITE_API_KEY;
-
-  const userId = localStorage.getItem('userId');
-  if (userId) {
-    config.headers['X-User-Id'] = userId;
+  const token = localStorage.getItem('sessionToken');
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`;
   }
 
   return config;
