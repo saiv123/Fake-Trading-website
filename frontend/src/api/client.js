@@ -1,20 +1,20 @@
-// Centralized Axios client — attaches httpOnly JWT cookies automatically and retries requests after a 401 by hitting the refresh endpoint
+// Centralized Axios client. Backend auth has no cookies/JWT — every request carries a static
+// X-API-Key (this website's pre-shared key) plus X-User-Id for the acting user, once known.
 import axios from 'axios';
 
 const client = axios.create({
-  baseURL: process.env.REACT_APP_API_URL,
-  withCredentials: true,
+  baseURL: import.meta.env.VITE_API_URL,
 });
 
-client.interceptors.response.use(
-  res => res,
-  async err => {
-    if (err.response?.status === 401) {
-      await axios.post('/api/auth/refresh', {}, { withCredentials: true });
-      return client(err.config);
-    }
-    return Promise.reject(err);
+client.interceptors.request.use((config) => {
+  config.headers['X-API-Key'] = import.meta.env.VITE_WEBSITE_API_KEY;
+
+  const userId = localStorage.getItem('userId');
+  if (userId) {
+    config.headers['X-User-Id'] = userId;
   }
-);
+
+  return config;
+});
 
 export default client;

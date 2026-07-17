@@ -3,14 +3,18 @@
 Login is OAuth-only (Google / Microsoft) — there are no passwords. The flow:
   1. /<provider> redirects to the provider; /<provider>/callback handles the return.
   2. _handle_oauth matches the account by provider ID, links it to an existing email if found,
-     or returns 202 "requires_registration" so the frontend can collect starting_balance + state.
+     or redirects to FRONTEND_URL/auth/callback with requires_registration params so the SPA can
+     collect starting_balance + state.
   3. /oauth/register finalizes a brand-new account.
+Every callback ends in a redirect to the frontend (never raw JSON) since the browser is on the
+Flask origin at that point and needs to land back in the SPA — see _handle_oauth.
 Also hosts the Discord linking flow: the bot requests a one-time token, the user visits the URL on
 the website, and discord_id gets written onto their account. Link tokens are short-lived and in-memory.
 """
 import secrets
 from datetime import datetime, timedelta
-from flask import Blueprint, request, jsonify, url_for
+from urllib.parse import urlencode
+from flask import Blueprint, request, jsonify, redirect, url_for, current_app
 from authlib.integrations.flask_client import OAuth
 
 from ..models.user import User
@@ -161,7 +165,9 @@ def discord_link_token():
         'discord_id': discord_id,
         'expires_at': datetime.utcnow() + timedelta(minutes=15),
     }
-    link_url = url_for('auth.discord_link_complete', token=token, _external=True)
+    # Points at the frontend, not the backend directly — /discord/link/complete is POST-only and
+    # the user needs a page to log in (if needed) and fire that POST with their user_id.
+    link_url = f"{current_app.config['FRONTEND_URL']}/discord/link?token={token}"
     return jsonify({'url': link_url})
 
 
@@ -195,10 +201,11 @@ def discord_link_complete():
 # ---- Helpers -----------------------------------------------------------------
 
 def _handle_oauth(provider: str, provider_id: str, email: str, display_name: str):
-    """Resolve an OAuth login to a user.
+    """Resolve an OAuth login to a user and redirect back to the frontend with the result.
 
-    Returns the user_id if the provider ID is known or links to a matching email; otherwise returns a
-    202 telling the frontend to collect difficulty/state and call /oauth/register.
+    Redirects to FRONTEND_URL/auth/callback with either ?user_id=... (known account) or
+    ?requires_registration=1&... (new account — the frontend collects starting_balance/state
+    and calls /oauth/register).
     """
     id_field = f'{provider}_id'
 
@@ -212,12 +219,14 @@ def _handle_oauth(provider: str, provider_id: str, email: str, display_name: str
             db.session.commit()
         else:
             # New user — frontend must collect starting_balance and state
-            return jsonify({
-                'requires_registration': True,
+            params = urlencode({
+                'requires_registration': '1',
                 'provider':     provider,
                 'provider_id':  provider_id,
                 'email':        email,
                 'display_name': display_name,
-            }), 202
+            })
+            return redirect(f"{current_app.config['FRONTEND_URL']}/auth/callback?{params}")
 
-    return jsonify({'user_id': user.id})
+    params = urlencode({'user_id': user.id})
+    return redirect(f"{current_app.config['FRONTEND_URL']}/auth/callback?{params}")

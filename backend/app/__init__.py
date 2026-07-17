@@ -9,6 +9,7 @@ false — starts the APScheduler background jobs. Import this module's `db` ever
 import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +27,13 @@ def create_app():
     app.config['GOOGLE_CLIENT_SECRET']           = os.environ.get('GOOGLE_CLIENT_SECRET')
     app.config['MICROSOFT_CLIENT_ID']            = os.environ.get('MICROSOFT_CLIENT_ID')
     app.config['MICROSOFT_CLIENT_SECRET']        = os.environ.get('MICROSOFT_CLIENT_SECRET')
+    app.config['FRONTEND_URL']                   = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
     app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(32))
+
+    # Website and bot are on different origins than the API; auth is via X-API-Key/X-User-Id
+    # headers (no cookies), so no credentials mode is needed on the CORS side.
+    CORS(app, origins=[app.config['FRONTEND_URL']],
+         allow_headers=['Content-Type', 'X-API-Key', 'X-User-Id', 'X-Discord-Id'])
 
     db.init_app(app)
 
